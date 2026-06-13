@@ -1,0 +1,185 @@
+"""
+Фабрика клавиатур.
+Все InlineKeyboardMarkup и ReplyKeyboardMarkup — здесь.
+"""
+
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove,
+)
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from config import CLAN_DISPLAY, ROLE_LABELS, ROLES
+
+
+# ─── Главное меню ─────────────────────────────────────────────────────────────
+
+def main_menu(member: dict) -> ReplyKeyboardMarkup:
+    role = member.get("role", "member")
+    builder = ReplyKeyboardBuilder()
+
+    # Кнопки для всех зарегистрированных участников
+    builder.button(text="✏️ Изменить текущий ник")
+    builder.button(text="💡 Отправить предложение")
+
+    # Вице президент и выше — редактирование списка
+    if _lvl(role) <= _lvl("vice"):
+        builder.button(text="📋 Редактировать список клана")
+        builder.button(text="👤 Участники без ников")
+
+    # Гранд-вице и выше — назначение модерации
+    if _lvl(role) <= _lvl("grand_vice"):
+        builder.button(text="📬 Прочитать предложки")
+        builder.button(text="⚙️ Назначить модерацию")
+        builder.button(text="📊 Список кто что пушит")
+        builder.button(text="❓ Кто не определился с пушем")
+
+    # Президент — запуск определения цели
+    if _lvl(role) <= _lvl("president"):
+        builder.button(text="🎯 Запустить определение цели")
+
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def _lvl(role: str) -> int:
+    return ROLES.get(role, 999)
+
+
+# ─── Выбор клана при регистрации / когда в нескольких ────────────────────────
+
+def choose_clan_keyboard(clans: list[str]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for clan in clans:
+        builder.button(
+            text=CLAN_DISPLAY.get(clan, clan),
+            callback_data=f"choose_clan:{clan}",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ─── Выбор цели пуша ──────────────────────────────────────────────────────────
+
+def push_goal_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏆 Трофеи", callback_data="push_goal:trophies"),
+                InlineKeyboardButton(text="🏅 Лига",   callback_data="push_goal:league"),
+            ]
+        ]
+    )
+
+
+def confirm_push_goal_keyboard(goal: str) -> InlineKeyboardMarkup:
+    label = "🏆 Трофеи" if goal == "trophies" else "🏅 Лига"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=f"✅ Подтвердить ({label})", callback_data=f"push_confirm:{goal}"),
+                InlineKeyboardButton(text="◀️ Изменить", callback_data="push_goal:back"),
+            ]
+        ]
+    )
+
+
+# ─── Подтверждение запуска опроса целей ───────────────────────────────────────
+
+def launch_push_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, запустить", callback_data="launch_push:yes"),
+                InlineKeyboardButton(text="❌ Отмена",        callback_data="launch_push:no"),
+            ]
+        ]
+    )
+
+
+# ─── Предложки ────────────────────────────────────────────────────────────────
+
+def proposals_list_keyboard(proposals: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for p in proposals:
+        label = f"{p['from_name']}  |  {p['sent_at'][:10]}"
+        builder.button(text=label, callback_data=f"proposal:view:{p['id']}")
+    builder.button(text="◀️ Назад", callback_data="proposal:back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def proposal_actions_keyboard(proposal_id: int, from_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💬 Написать в ЛС",
+                    url=f"tg://user?id={from_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"proposal:reject:{proposal_id}",
+                ),
+                InlineKeyboardButton(text="◀️ Назад", callback_data="proposal:list"),
+            ],
+        ]
+    )
+
+
+# ─── Назначение модерации ─────────────────────────────────────────────────────
+
+def appoint_role_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for role, label in ROLE_LABELS.items():
+        if role == "member":
+            continue
+        builder.button(
+            text=label,
+            callback_data=f"appoint:{user_id}:{role}",
+        )
+    builder.button(text="◀️ Назад", callback_data="appoint:cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ─── Оповестить о пуше ────────────────────────────────────────────────────────
+
+def notify_undecided_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📢 Оповестить в новостях",
+                    callback_data="undecided:notify",
+                ),
+            ],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="undecided:back")],
+        ]
+    )
+
+
+def confirm_notify_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Уверен, оповестить", callback_data="notify:confirm"),
+                InlineKeyboardButton(text="❌ Отмена",             callback_data="notify:cancel"),
+            ]
+        ]
+    )
+
+
+# ─── Прочее ───────────────────────────────────────────────────────────────────
+
+def back_keyboard(callback: str = "back") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад", callback_data=callback)]]
+    )
+
+
+remove_keyboard = ReplyKeyboardRemove()
